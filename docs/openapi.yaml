@@ -1,0 +1,255 @@
+openapi: 3.0.3
+info:
+  title: HAIR GRECIA - API académica
+  version: 1.0.0
+  description: API REST de demostración para usuarios, servicios, barberos y citas. No apta para producción sin más controles de seguridad.
+servers:
+  - url: http://localhost:8000/api
+paths:
+  /health:
+    get:
+      summary: Comprobar que el servidor funciona
+      responses:
+        '200': {description: API activa}
+  /services:
+    get:
+      summary: Consultar servicios y precios de referencia
+      responses:
+        '200':
+          description: Servicios disponibles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Service' }
+  /barbers:
+    get:
+      summary: Consultar barberos y jornadas
+      responses:
+        '200':
+          description: Equipo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Barber' }
+  /availability:
+    get:
+      summary: Consultar horas libres para un servicio y profesional
+      parameters:
+        - in: query
+          name: date
+          required: true
+          schema: {type: string, format: date}
+          example: '2030-11-25'
+        - in: query
+          name: barber_id
+          required: true
+          schema: {type: integer}
+          example: 1
+        - in: query
+          name: service_id
+          required: true
+          schema: {type: integer}
+          example: 1
+      responses:
+        '200':
+          description: Horarios disponibles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  date: {type: string, format: date}
+                  slots: {type: array, items: {type: string, example: '09:00'}}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /auth/register:
+    post:
+      summary: Registrar cliente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: {type: string, example: 'Ana Martínez'}
+                email: {type: string, format: email, example: 'ana@example.com'}
+                password: {type: string, format: password, minLength: 8}
+      responses:
+        '201': {description: Cuenta creada}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {description: El correo ya existe}
+  /auth/login:
+    post:
+      summary: Iniciar sesión y recibir token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, format: password}
+      responses:
+        '200':
+          description: Sesión iniciada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: {type: string}
+                  user: { $ref: '#/components/schemas/User' }
+        '401': {description: Credenciales incorrectas}
+  /auth/me:
+    get:
+      summary: Consultar el usuario de la sesión
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Usuario autenticado}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /auth/logout:
+    post:
+      summary: Cerrar la sesión
+      security: [{BearerAuth: []}]
+      responses:
+        '200': {description: Sesión cerrada}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /appointments:
+    get:
+      summary: Ver las citas propias o todas si se es administrador
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Reservas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Appointment' }
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      summary: Crear una reserva sin solapar horarios
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [service_id, barber_id, date, time]
+              properties:
+                service_id: {type: integer, example: 1}
+                barber_id: {type: integer, example: 1}
+                date: {type: string, format: date, example: '2030-11-25'}
+                time: {type: string, example: '09:00'}
+      responses:
+        '201': {description: Reserva guardada}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {description: Hora no disponible}
+  /appointments/{id}/cancel:
+    patch:
+      summary: Cancelar una cita propia o cualquier cita como administrador
+      security: [{BearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        '200': {description: Cita cancelada}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {description: No tienes permiso}
+        '404': {description: No existe la cita}
+        '409': {description: Ya estaba cancelada}
+  /stats:
+    get:
+      summary: Resumen de reservas para administración
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Totales
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reservadas: {type: integer}
+                  canceladas: {type: integer}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {description: Acceso denegado}
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    BadRequest:
+      description: Datos inválidos
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Debes iniciar sesión
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: {type: string}
+    Service:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        duration_min: {type: integer}
+        price_from: {type: integer}
+        image: {type: string}
+    Barber:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        specialty: {type: string}
+        image: {type: string}
+        week_from: {type: string}
+        week_to: {type: string}
+        sat_from: {type: string}
+        sat_to: {type: string}
+    User:
+      type: object
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        email: {type: string, format: email}
+        role: {type: string, enum: [client, admin]}
+    Appointment:
+      type: object
+      properties:
+        id: {type: integer}
+        user_id: {type: integer}
+        barber_id: {type: integer}
+        service_id: {type: integer}
+        visit_date: {type: string, format: date}
+        start_time: {type: string}
+        end_time: {type: string}
+        status: {type: string, enum: [reservada, cancelada]}
+        service_name: {type: string}
+        barber_name: {type: string}
+        client_name: {type: string}
